@@ -18,8 +18,9 @@ os.makedirs(conflicts_directory, exist_ok=True)
 os.environ["FPCALC"] = r"A:\fpcalc.exe"
 import acoustid
 api_key = '4o8cPCTwS5'
-errors = {}
 
+errors = {}
+supported_formats = ['.mp3', '.m4a', '.flac'] 
 
 def get_hash(path):
     sha = hashlib.sha256()
@@ -37,14 +38,12 @@ def new_filename(full_name, name):
     error handling if directory or not mp3 passed.
     checking if music name is already correct (full_name == new_name).  
     """
-    global online
 
     if not os.path.isfile(full_name): 
         return None
     
     
     ext = os.path.splitext(full_name)[1].lower()
-    supported_formats = ['.mp3', '.m4a', '.flac'] 
     if ext not in supported_formats:
         return None
     
@@ -75,7 +74,6 @@ def new_filename(full_name, name):
     except Exception as e:
         errors[name] = f' {type(e).__name__}: {e}'
         print('\n', e, '\n')
-        online = True
         return None
 
 
@@ -103,19 +101,19 @@ def name_collision(full_name, new_name):
     return True
 
 
-def rename_music(name, full_name, directory):
+def rename_music(name, full_name):
     try:
         new_name = new_filename(full_name, name)
         if not new_name:
-            return
+            return 'online'
         
         #title still exists
         if os.path.exists(new_name):
-            name_collision(full_name, new_name, )
-            return
+            name_collision(full_name, new_name )
+            return 'collision'
 
         os.rename(full_name, new_name)
-    
+        return 'renamed'
     except Exception as e:
         errors[name] = f' {type(e).__name__}: {e}'
 
@@ -130,7 +128,14 @@ def online_title(full_name):
         # print(title)
         # print(artist)
         if title and score >= 0.9:
+            ext = os.path.splitext(full_name)[1].lower()
             online_name = os.path.join(directory, (title + ext))
+            
+            # checking online-offline collision
+            if os.path.exists(online_name):
+                name_collision(full_name, online_name)
+                return
+
             os.rename(full_name, online_name)
             break
 
@@ -140,10 +145,7 @@ for name in names:
     full_name = os.path.join(directory, name)
     ext = os.path.splitext(name)[1].lower()
 
-    online = False
-    rename_music(name, full_name, directory)
-
-    if online:
+    if 'online' == rename_music(name, full_name):
         # print(name)
         online_title(os.path.join(directory, name))
         # print(40*'---')
