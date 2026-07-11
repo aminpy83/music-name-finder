@@ -1,12 +1,16 @@
 import os
 import re
+import time
 import hashlib
-from pprint import pprint
 from mutagen.easyid3 import EasyID3
 from mutagen.flac import FLAC
 from mutagen.mp4 import MP4
+from mutagen.mp3 import MP3
+from mutagen.id3 import ID3
+from pprint import pprint
 
-directory = r'A:\New folder\Music\samples'
+
+directory = r'ABS PATH'
 names = os.listdir(directory)
 
 duplicates_directory = os.path.join(directory, "duplicates")
@@ -17,10 +21,11 @@ os.makedirs(conflicts_directory, exist_ok=True)
 
 os.environ["FPCALC"] = r"A:\fpcalc.exe"
 import acoustid
-api_key = '4o8cPCTwS5'
+api_key = 'API KEY'
 
 errors = {}
 supported_formats = ['.mp3', '.m4a', '.flac'] 
+
 
 def get_hash(path):
     sha = hashlib.sha256()
@@ -30,51 +35,6 @@ def get_hash(path):
             sha.update(chunk)
 
     return sha.hexdigest()
-
-
-def new_filename(full_name, name):
-    """
-    making title via full_name.
-    error handling if directory or not mp3 passed.
-    checking if music name is already correct (full_name == new_name).  
-    """
-
-    if not os.path.isfile(full_name): 
-        return None
-    
-    
-    ext = os.path.splitext(full_name)[1].lower()
-    if ext not in supported_formats:
-        return None
-    
-    try:
-        if ext == ".mp3":
-            music = EasyID3(full_name)
-            title = music["title"][0]
-
-        elif ext == ".flac":
-            music = FLAC(full_name)
-            title = music["title"][0]
-
-        elif ext == ".m4a":
-            music = MP4(full_name)
-            title = music["©nam"][0]
-
-
-        title = re.sub(r'[<>:"/\\|?*]', '_', title)
-        title = title.strip()
-        new_name = os.path.join(
-                                os.path.dirname(full_name),
-                                title + ext)
-    
-        if os.path.normcase(full_name) == os.path.normcase(new_name):
-            return None
-        return new_name
-
-    except Exception as e:
-        errors[name] = f' {type(e).__name__}: {e}'
-        print('\n', e, '\n')
-        return None
 
 
 def name_collision(full_name, new_name):
@@ -101,13 +61,74 @@ def name_collision(full_name, new_name):
     return True
 
 
+def new_filename(full_name, name):
+    """
+    making title via full_name.
+    error handling if directory or not mp3 passed.
+    checking if music name is already correct (full_name == new_name).  
+    """
+
+    if not os.path.isfile(full_name): 
+        return 'directory'
+    
+    
+    ext = os.path.splitext(full_name)[1].lower()
+    if ext not in supported_formats:
+        return 'not supported'
+    
+    try:
+        if ext == ".mp3":
+            music = EasyID3(full_name)
+            title = music["title"][0]
+
+            audio = MP3(full_name, ID3=ID3)
+            apic = audio.tags.getall("APIC")
+            # if not apic:
+            #     print(name)
+
+
+        elif ext == ".flac":
+            music = FLAC(full_name)
+            title = music["title"][0]
+
+            # if not music.pictures:
+            #     print(name)
+
+        elif ext == ".m4a":
+            music = MP4(full_name)
+            title = music["©nam"][0]
+
+            # if not "covr" in music:
+            #     print(name)
+
+
+        title = re.sub(r'[<>:"/\\|?*]', '_', title)
+        title = title.strip()
+        new_name = os.path.join(
+                                os.path.dirname(full_name),
+                                title + ext)
+    
+
+        if os.path.normcase(full_name) == os.path.normcase(new_name):
+            return 'already correct'
+        return new_name
+
+    except Exception as e:
+        errors[name] = f' {type(e).__name__}: {e}'
+        print('\n', e, '\n')
+        return None
+
+
 def rename_music(name, full_name):
     try:
         new_name = new_filename(full_name, name)
+        if new_name in ['not supported', 'directory', 'already correct']:
+            return 'nothing to do'
+        
         if not new_name:
             return 'online'
         
-        #title still exists
+        #title still  -> collision
         if os.path.exists(new_name):
             name_collision(full_name, new_name )
             return 'collision'
@@ -119,15 +140,20 @@ def rename_music(name, full_name):
 
 
 def online_title(full_name):
+
+    # print(full_name)
+    # print(os.path.exists(full_name))
+
+
     result = acoustid.match(
                             api_key,
                             full_name) 
     
     for score, recording_id, title, artist in result:
-        # print(score)
-        # print(title)
-        # print(artist)
+
         if title and score >= 0.9:
+            title = re.sub(r'[<>:"/\\|?*]', '_', title)
+            title = title.strip()
             ext = os.path.splitext(full_name)[1].lower()
             online_name = os.path.join(directory, (title + ext))
             
@@ -139,14 +165,22 @@ def online_title(full_name):
             os.rename(full_name, online_name)
             break
 
-        
+
+def cover_finder(name):
+    ...
+
+
+rate_limit = 0
 for name in names:
-    # print(name)
     full_name = os.path.join(directory, name)
-    ext = os.path.splitext(name)[1].lower()
 
     if 'online' == rename_music(name, full_name):
-        # print(name)
+
+        if rate_limit >= 3:
+            time.sleep(0.5)
+            rate_limit = 0
+
         online_title(os.path.join(directory, name))
-        # print(40*'---')
+        rate_limit += 1
+
 print(errors)
